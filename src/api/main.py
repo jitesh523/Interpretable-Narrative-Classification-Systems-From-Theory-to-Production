@@ -39,12 +39,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Genre Classification API", lifespan=lifespan)
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
     if not models:
         raise HTTPException(status_code=503, detail="Models not loaded")
     
-    try:
+    loop = asyncio.get_event_loop()
+    
+    def blocking_predict():
         # Preprocess
         cleaned_text = clean_text(request.text)
         
@@ -58,21 +63,18 @@ async def predict(request: PredictionRequest):
         probabilities = classifier.predict_proba(vec)[0]
         
         # Get confidence
-        # prediction_idx is the class label (string), we need to find its index in classes_ to get probability
         class_index = list(classifier.model.classes_).index(prediction_idx)
         confidence = float(probabilities[class_index])
         
         explanation = []
         if request.include_explanation:
             explainer = models["explainer"]
-            # LIME requires a function that takes raw text and returns probabilities
             def predict_proba_fn(texts):
                 clean_texts = [clean_text(t) for t in texts]
                 vecs = vectorizer.transform(clean_texts)
                 return classifier.predict_proba(vecs)
             
             explanation = explainer.explain_instance(request.text, predict_proba_fn)
-            # Convert numpy types to native python types for JSON serialization
             explanation = [(str(k), float(v)) for k, v in explanation]
             
         return PredictionResponse(
@@ -80,6 +82,10 @@ async def predict(request: PredictionRequest):
             confidence=confidence,
             explanation=explanation
         )
+
+    try:
+        # Run blocking code in a separate thread
+        return await loop.run_in_executor(None, blocking_predict)
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
