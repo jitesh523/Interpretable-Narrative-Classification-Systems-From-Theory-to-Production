@@ -3,6 +3,7 @@ scikit-learn
 numpy
 joblib
 nltk
+lime
 fastapi
 uvicorn
 pydantic
