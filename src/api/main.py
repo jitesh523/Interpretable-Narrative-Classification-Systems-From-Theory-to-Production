@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from contextlib import asynccontextmanager
 from src.api.schemas import PredictionRequest, PredictionResponse
 from src.model import GenreClassifier
@@ -7,6 +7,13 @@ from src.explainability import Explainer
 from src.preprocessing import clean_text
 import numpy as np
 import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from cachetools import TTLCache
+from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Global variables for models
 models = {}
@@ -37,23 +44,25 @@ async def lifespan(app: FastAPI):
     # Clean up on shutdown
     models.clear()
 
-app = FastAPI(title="Genre Classification API", lifespan=lifespan)
 
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from cachetools import TTLCache
-from prometheus_fastapi_instrumentator import Instrumentator
+# Initialize Limiter
+limiter = Limiter(key_func=get_remote_address)
+
+app = FastAPI(title="Genre Classification API", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Initialize cache: max 1000 items, 1 hour TTL
 prediction_cache = TTLCache(maxsize=1000, ttl=3600)
 
 @app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
+@limiter.limit("5/minute")
+async def predict(request: Request, prediction_request: PredictionRequest):
     if not models:
         raise HTTPException(status_code=503, detail="Models not loaded")
     
     # Create cache key
-    cache_key = (request.text, request.include_explanation)
+    cache_key = (prediction_request.text, prediction_request.include_explanation)
     
     # Check cache
     if cache_key in prediction_cache:
@@ -63,7 +72,7 @@ async def predict(request: PredictionRequest):
     
     def blocking_predict():
         # Preprocess
-        cleaned_text = clean_text(request.text)
+        cleaned_text = clean_text(prediction_request.text)
         
         # Vectorize
         vectorizer = models["vectorizer"]
@@ -79,14 +88,14 @@ async def predict(request: PredictionRequest):
         confidence = float(probabilities[class_index])
         
         explanation = []
-        if request.include_explanation:
+        if prediction_request.include_explanation:
             explainer = models["explainer"]
             def predict_proba_fn(texts):
                 clean_texts = [clean_text(t) for t in texts]
                 vecs = vectorizer.transform(clean_texts)
                 return classifier.predict_proba(vecs)
             
-            explanation = explainer.explain_instance(request.text, predict_proba_fn)
+            explanation = explainer.explain_instance(prediction_request.text, predict_proba_fn)
             explanation = [(str(k), float(v)) for k, v in explanation]
             
         return PredictionResponse(
