@@ -41,11 +41,22 @@ app = FastAPI(title="Genre Classification API", lifespan=lifespan)
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from cachetools import TTLCache
+
+# Initialize cache: max 1000 items, 1 hour TTL
+prediction_cache = TTLCache(maxsize=1000, ttl=3600)
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
     if not models:
         raise HTTPException(status_code=503, detail="Models not loaded")
+    
+    # Create cache key
+    cache_key = (request.text, request.include_explanation)
+    
+    # Check cache
+    if cache_key in prediction_cache:
+        return prediction_cache[cache_key]
     
     loop = asyncio.get_event_loop()
     
@@ -85,7 +96,11 @@ async def predict(request: PredictionRequest):
 
     try:
         # Run blocking code in a separate thread
-        return await loop.run_in_executor(None, blocking_predict)
+        response = await loop.run_in_executor(None, blocking_predict)
+        
+        # Store in cache
+        prediction_cache[cache_key] = response
+        return response
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
