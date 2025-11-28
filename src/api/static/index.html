@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Genre Classifier</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        textarea { width: 100%; height: 150px; margin-bottom: 10px; }
+        button { padding: 10px 20px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        #result { margin-top: 20px; padding: 10px; border: 1px solid #ddd; display: none; }
+        .explanation-item { margin: 5px 0; }
+        .bar { display: inline-block; height: 10px; background-color: #28a745; }
+        .bar-neg { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <h1>Narrative Genre Classifier</h1>
+    <p>Enter a story snippet below to classify its genre.</p>
+    
+    <textarea id="textInput" placeholder="The spaceship landed on the alien planet..."></textarea>
+    <br>
+    <label>
+        <input type="checkbox" id="explainCheckbox" checked> Include Explanation
+    </label>
+    <br><br>
+    <button onclick="classify()">Classify</button>
+    
+    <div id="result"></div>
+
+    <script>
+        async function classify() {
+            const text = document.getElementById('textInput').value;
+            const includeExplanation = document.getElementById('explainCheckbox').checked;
+            const resultDiv = document.getElementById('result');
+            
+            if (!text) return;
+            
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = 'Analyzing...';
+            
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, include_explanation: includeExplanation })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                let html = `<h3>Genre: ${data.genre}</h3>`;
+                html += `<p>Confidence: ${(data.confidence * 100).toFixed(1)}%</p>`;
+                
+                if (data.explanation && data.explanation.length > 0) {
+                    html += '<h4>Why? (Top features)</h4>';
+                    data.explanation.forEach(([word, score]) => {
+                        const width = Math.abs(score) * 500; // Scale for visualization
+                        const colorClass = score > 0 ? 'bar' : 'bar bar-neg';
+                        html += `
+                            <div class="explanation-item">
+                                <strong>${word}</strong>: ${score.toFixed(4)}
+                                <div class="${colorClass}" style="width: ${width}px;"></div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                resultDiv.innerHTML = html;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

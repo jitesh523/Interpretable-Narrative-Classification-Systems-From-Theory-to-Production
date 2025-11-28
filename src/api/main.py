@@ -121,3 +121,13 @@ async def health():
 
 # Instrument the app
 Instrumentator().instrument(app).expose(app)
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="src/api/static"), name="static")
+
+@app.get("/")
+async def read_index():
+    return FileResponse("src/api/static/index.html")
