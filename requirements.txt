@@ -10,5 +10,6 @@ pydantic
 cachetools
 prometheus-fastapi-instrumentator
 slowapi
+structlog
 pytest
 httpx

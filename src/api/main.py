@@ -14,6 +14,20 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import structlog
+import logging
+
+# Configure structlog
+structlog.configure(
+    processors=[
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+)
+
+logger = structlog.get_logger()
 
 # Global variables for models
 models = {}
@@ -22,7 +36,7 @@ models = {}
 async def lifespan(app: FastAPI):
     # Load models on startup
     try:
-        print("Loading models...")
+        logger.info("loading_models")
         classifier = GenreClassifier()
         classifier.load("models/model.joblib")
         
@@ -34,9 +48,9 @@ async def lifespan(app: FastAPI):
         models["classifier"] = classifier
         models["vectorizer"] = vectorizer
         models["explainer"] = explainer
-        print("Models loaded successfully.")
+        logger.info("models_loaded_successfully")
     except Exception as e:
-        print(f"Error loading models: {e}")
+        logger.error("error_loading_models", error=str(e))
         raise e
     
     yield
@@ -66,6 +80,7 @@ async def predict(request: Request, prediction_request: PredictionRequest):
     
     # Check cache
     if cache_key in prediction_cache:
+        logger.info("cache_hit", text_snippet=prediction_request.text[:20])
         return prediction_cache[cache_key]
     
     loop = asyncio.get_event_loop()
@@ -110,9 +125,11 @@ async def predict(request: Request, prediction_request: PredictionRequest):
         
         # Store in cache
         prediction_cache[cache_key] = response
+        logger.info("prediction_complete", genre=response.genre, confidence=response.confidence)
         return response
         
     except Exception as e:
+        logger.error("prediction_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
