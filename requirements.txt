@@ -8,5 +8,6 @@ fastapi
 uvicorn
 pydantic
 cachetools
+prometheus-fastapi-instrumentator
 pytest
 httpx

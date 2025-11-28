@@ -42,6 +42,7 @@ app = FastAPI(title="Genre Classification API", lifespan=lifespan)
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from cachetools import TTLCache
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Initialize cache: max 1000 items, 1 hour TTL
 prediction_cache = TTLCache(maxsize=1000, ttl=3600)
@@ -108,3 +109,6 @@ async def predict(request: PredictionRequest):
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+# Instrument the app
+Instrumentator().instrument(app).expose(app)
