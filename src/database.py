@@ -16,6 +16,15 @@ class PredictionLog(Base):
     ip_address = Column(String)
     model_version = Column(String)
 
+class Feedback(Base):
+    __tablename__ = "feedback"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    prediction_id = Column(Integer) # For simplicity, not using ForeignKey constraint to avoid migration complexity for now
+    actual_genre = Column(String)
+    comments = Column(Text)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./app.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})

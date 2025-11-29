@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from contextlib import asynccontextmanager
-from src.api.schemas import PredictionRequest, PredictionResponse
+from src.api.schemas import PredictionRequest, PredictionResponse, FeedbackRequest
 from src.model import GenreClassifier
 from src.features import FeatureExtractor
 from src.explainability import Explainer
@@ -17,7 +17,7 @@ from slowapi.errors import RateLimitExceeded
 import structlog
 import logging
 from sqlalchemy.orm import Session
-from src.database import init_db, SessionLocal, PredictionLog
+from src.database import init_db, SessionLocal, PredictionLog, Feedback
 
 # Configure structlog
 structlog.configure(
@@ -153,6 +153,10 @@ async def predict(request: Request, prediction_request: PredictionRequest, db: S
             )
             db.add(db_log)
             db.commit()
+            db.refresh(db_log) # Get ID
+            
+            response.prediction_id = db_log.id
+            
         except Exception as e:
             logger.error("database_log_failed", error=str(e))
             
@@ -160,6 +164,22 @@ async def predict(request: Request, prediction_request: PredictionRequest, db: S
         
     except Exception as e:
         logger.error("prediction_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/feedback")
+async def submit_feedback(feedback: FeedbackRequest, db: Session = Depends(get_db)):
+    try:
+        db_feedback = Feedback(
+            prediction_id=feedback.prediction_id,
+            actual_genre=feedback.actual_genre,
+            comments=feedback.comments
+        )
+        db.add(db_feedback)
+        db.commit()
+        logger.info("feedback_received", prediction_id=feedback.prediction_id)
+        return {"status": "success", "message": "Feedback received"}
+    except Exception as e:
+        logger.error("feedback_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
