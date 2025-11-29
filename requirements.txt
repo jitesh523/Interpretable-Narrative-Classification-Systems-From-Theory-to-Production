@@ -15,5 +15,6 @@ sqlalchemy
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
+openai
 pytest
 httpx

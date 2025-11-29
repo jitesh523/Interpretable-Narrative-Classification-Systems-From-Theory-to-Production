@@ -178,6 +178,44 @@ fake_users_db = {
     }
 }
 
+from src.llm_service import LLMExplainer
+
+# Initialize LLM Explainer
+llm_explainer = LLMExplainer()
+
+@app.post("/explain_llm")
+async def explain_with_llm(
+    request: PredictionRequest, 
+    current_user: str = Depends(get_current_user)
+):
+    # 1. Get prediction (re-using logic or calling internal function would be better, but for now calling model directly)
+    # Note: In a real app, we might want to pass the prediction ID and fetch from DB, or just re-predict.
+    # Let's re-predict for simplicity.
+    if not models:
+        raise HTTPException(status_code=503, detail="Models not loaded")
+        
+    processed_text = clean_text(request.text)
+    vectorizer = models["vectorizer"]
+    features = vectorizer.transform([processed_text])
+    
+    classifier = models["classifier"]
+    prediction_idx = classifier.predict(features)[0]
+    probabilities = classifier.predict_proba(features)[0]
+    
+    # Get confidence
+    class_index = list(classifier.model.classes_).index(prediction_idx)
+    confidence = float(probabilities[class_index])
+    
+    # 2. Generate LLM explanation
+    explanation = llm_explainer.generate_explanation(request.text, prediction_idx, confidence)
+    
+    return {
+        "text": request.text,
+        "genre": prediction_idx,
+        "confidence": confidence,
+        "llm_explanation": explanation
+    }
+
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     user = fake_users_db.get(form_data.username)
