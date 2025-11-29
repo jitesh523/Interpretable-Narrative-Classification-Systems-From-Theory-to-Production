@@ -5,15 +5,12 @@ This project implements a genre classification API for narratives, focusing on i
 ## Features
 - **Genre Classification**: Classifies text into genres (Science Fiction, Romance, Mystery, Fantasy) using an SVM model with TF-IDF features.
 - **Explainability**: Provides LIME explanations for predictions, highlighting the words that contributed most to the classification.
-- **API**: Exposes the model via a FastAPI endpoint with Pydantic validation.
-- **Dockerized**: Ready for deployment using Docker.
-
-## Project Structure
-- `data/`: Contains the dataset (synthetic).
-- `models/`: Serialized models (SVM, Vectorizer).
-- `src/`: Source code for preprocessing, features, model, and API.
-- `analysis.md`: Analysis of system limitations and future directions.
-- `Dockerfile`: Docker configuration.
+- **Enterprise Features**:
+    - **Database Integration**: Predictions are logged to a SQLite database (`app.db`).
+    - **Active Learning Feedback Loop**: Users can submit feedback on predictions via the `/feedback` endpoint.
+    - **API Security**: JWT-based authentication protects sensitive endpoints.
+    - **External LLM Integration**: The `/explain_llm` endpoint provides natural language explanations using OpenAI (requires `OPENAI_API_KEY`).
+- **Production Ready**: Dockerized, cached, rate-limited, and monitored (Prometheus).
 
 ## Setup
 
@@ -42,7 +39,9 @@ This project implements a genre classification API for narratives, focusing on i
    docker run -p 8000:8000 genre-api
    ```
 
-## API Usage
+## Usage
+
+### 1. Basic Prediction
 **Endpoint**: `POST /predict`
 
 **Request**:
@@ -64,3 +63,32 @@ This project implements a genre classification API for narratives, focusing on i
   ]
 }
 ```
+
+### 2. Authentication
+Get a token (default credentials: admin/secret):
+```bash
+curl -X POST "http://localhost:8000/token" -d "username=admin&password=secret"
+```
+
+### 3. Submit Feedback
+```bash
+curl -X POST "http://localhost:8000/feedback" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"prediction_id": 1, "actual_genre": "Mystery", "comments": "Correct!"}'
+```
+
+### 4. LLM Explanation
+```bash
+curl -X POST "http://localhost:8000/explain_llm" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"text": "The detective found a clue.", "include_explanation": false}'
+```
+
+## Project Structure
+- `data/`: Contains the dataset (synthetic).
+- `models/`: Serialized models (SVM, Vectorizer).
+- `src/`: Source code for preprocessing, features, model, and API.
+- `analysis.md`: Analysis of system limitations and future directions.
+- `Dockerfile`: Docker configuration.
