@@ -16,6 +16,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import structlog
 import logging
+from sqlalchemy.orm import Session
+from src.database import init_db, SessionLocal, PredictionLog
 
 # Configure structlog
 structlog.configure(
@@ -36,6 +38,9 @@ models = {}
 async def lifespan(app: FastAPI):
     # Load models on startup
     try:
+        logger.info("initializing_database")
+        init_db()
+        
         logger.info("loading_models")
         classifier = GenreClassifier()
         classifier.load("models/model.joblib")
@@ -62,6 +67,14 @@ async def lifespan(app: FastAPI):
 # Initialize Limiter
 limiter = Limiter(key_func=get_remote_address)
 
+# Database dependency
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 app = FastAPI(title="Genre Classification API", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -69,9 +82,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Initialize cache: max 1000 items, 1 hour TTL
 prediction_cache = TTLCache(maxsize=1000, ttl=3600)
 
+from fastapi import Depends
+
 @app.post("/predict", response_model=PredictionResponse)
 @limiter.limit("5/minute")
-async def predict(request: Request, prediction_request: PredictionRequest):
+async def predict(request: Request, prediction_request: PredictionRequest, db: Session = Depends(get_db)):
     if not models:
         raise HTTPException(status_code=503, detail="Models not loaded")
     
@@ -126,6 +141,21 @@ async def predict(request: Request, prediction_request: PredictionRequest):
         # Store in cache
         prediction_cache[cache_key] = response
         logger.info("prediction_complete", genre=response.genre, confidence=response.confidence)
+        
+        # Log to database
+        try:
+            db_log = PredictionLog(
+                text=prediction_request.text,
+                genre=response.genre,
+                confidence=response.confidence,
+                ip_address=request.client.host,
+                model_version="v1"
+            )
+            db.add(db_log)
+            db.commit()
+        except Exception as e:
+            logger.error("database_log_failed", error=str(e))
+            
         return response
         
     except Exception as e:

@@ -11,5 +11,6 @@ cachetools
 prometheus-fastapi-instrumentator
 slowapi
 structlog
+sqlalchemy
 pytest
 httpx
