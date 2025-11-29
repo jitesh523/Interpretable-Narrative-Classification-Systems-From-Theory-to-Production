@@ -12,5 +12,8 @@ prometheus-fastapi-instrumentator
 slowapi
 structlog
 sqlalchemy
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
 pytest
 httpx

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends, status
 from contextlib import asynccontextmanager
 from src.api.schemas import PredictionRequest, PredictionResponse, FeedbackRequest
 from src.model import GenreClassifier
@@ -8,6 +8,7 @@ from src.preprocessing import clean_text
 import numpy as np
 import os
 import asyncio
+from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from cachetools import TTLCache
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -166,8 +167,38 @@ async def predict(request: Request, prediction_request: PredictionRequest, db: S
         logger.error("prediction_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
+from fastapi.security import OAuth2PasswordRequestForm
+from src.api.auth import Token, create_access_token, get_current_user, get_password_hash, verify_password
+
+# Mock user database
+fake_users_db = {
+    "admin": {
+        "username": "admin",
+        "hashed_password": get_password_hash("secret")
+    }
+}
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = fake_users_db.get(form_data.username)
+    if not user or not verify_password(form_data.password, user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=30)
+    access_token = create_access_token(
+        data={"sub": user["username"]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
 @app.post("/feedback")
-async def submit_feedback(feedback: FeedbackRequest, db: Session = Depends(get_db)):
+async def submit_feedback(
+    feedback: FeedbackRequest, 
+    db: Session = Depends(get_db),
+    current_user: str = Depends(get_current_user) # Protect this endpoint
+):
     try:
         db_feedback = Feedback(
             prediction_id=feedback.prediction_id,
@@ -176,7 +207,7 @@ async def submit_feedback(feedback: FeedbackRequest, db: Session = Depends(get_d
         )
         db.add(db_feedback)
         db.commit()
-        logger.info("feedback_received", prediction_id=feedback.prediction_id)
+        logger.info("feedback_received", prediction_id=feedback.prediction_id, user=current_user.username)
         return {"status": "success", "message": "Feedback received"}
     except Exception as e:
         logger.error("feedback_failed", error=str(e))
